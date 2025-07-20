@@ -1,0 +1,394 @@
+
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Vasudha Project By Abeer Srivastava IX E</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            font-family: sans-serif;
+            background-color: #f4f4f4;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        /* Container for the side-by-side video columns */
+        #video-display-container {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+        .video-column {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: calc(50% - 10px);
+            min-width: 320px;
+            max-width: 540px;
+            margin-bottom: 10px;
+        }
+
+        .video-label {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+            text-align: center;
+            width: 100%;
+        }
+
+        #webcam-container, #canvas {
+            width: 100%;
+            height: auto;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #webcam-container canvas, #canvas {
+            display: block;
+            width: 100%;
+            height: auto;
+            border: 2px solid #333;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            background-color: black;
+        }
+
+        div {
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+
+        #controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 1em;
+            cursor: pointer;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover:not(:disabled) {
+            background-color: #0056b3;
+        }
+
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        #label-container {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        #label-container div {
+            font-size: 1.1em;
+            color: #555;
+        }
+
+        #timer-display {
+            font-size: 2em;
+            font-weight: bold;
+            color: #28a745; 
+            margin-bottom: 20px;
+            background-color: #e6ffe6;
+            padding: 10px 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        /* NEW: Styling for the time breakdown container */
+        #time-breakdown-container {
+            width: 90%;
+            max-width: 700px;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            font-size: 1em;
+            margin-top: 10px;
+        }
+        #time-breakdown-container h3 {
+            margin-top: 0;
+            text-align: center;
+            color: #333;
+        }
+        .time-entry {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 1.1em;
+            font-weight: normal;
+        }
+        .pose-name {
+            font-weight: bold;
+            color: #333;
+        }
+        .pose-stats {
+            text-align: right;
+        }
+        .pose-time {
+            color: #007bff;
+            font-weight: bold;
+        }
+        .pose-percent {
+            color: #28a745;
+            font-style: italic;
+            margin-left: 10px;
+        }
+
+    </style>
+</head>
+<body>
+    <div>Abeer Srivastava IX E Vasudha</div>
+    <div>Title: How effective is online teaching</div>
+    <div>Student Scoring</div>	
+    <div id="controls">
+        <button type="button" onclick="startMonitoring()" id="startButton">Start Monitoring</button>
+        <button type="button" onclick="stopMonitoring()" id="stopButton" disabled>Stop Monitoring</button>
+    </div>
+
+    <div id="timer-display">Timer: 00:00</div>
+    
+    <div id="video-display-container">
+        <div class="video-column">
+            <div class="video-label">Input</div>
+            <div id="webcam-container"></div>
+        </div>
+
+        <div class="video-column">
+            <div class="video-label">Analysis</div>
+            <div><canvas id="canvas"></canvas></div>
+        </div>
+    </div>
+    
+    <div id="label-container"></div>
+
+    <div id="time-breakdown-container"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
+
+<script type="text/javascript">
+    const URL = "https://teachablemachine.withgoogle.com/models/m2fwR6mtN/";
+    let model, webcam, ctx, labelContainer, maxPredictions;
+
+    // Timer and state variables
+    let timerInterval = null;
+    let secondsElapsed = 0;
+    let monitoringActive = false;
+
+    // NEW: Variables for cumulative time tracking
+    let cumulativePoseTime = {};      // Stores time in seconds for each pose
+    let lastDominantPose = null;      // Stores the highest confidence pose from the last frame
+    let timeBreakdownContainer;       // DOM element for the breakdown display
+
+    // Get references to buttons and timer display
+    const startButton = document.getElementById("startButton");
+    const stopButton = document.getElementById("stopButton");
+    const timerDisplay = document.getElementById("timer-display");
+
+    async function startMonitoring() {
+        if (monitoringActive) return;
+
+        startButton.disabled = true;
+        stopButton.disabled = false;
+        
+        secondsElapsed = 0;
+        timerDisplay.textContent = "Timer: 00:00";
+
+        // NEW: Reset time tracking variables
+        cumulativePoseTime = {};
+        lastDominantPose = null;
+        timeBreakdownContainer = document.getElementById("time-breakdown-container");
+        timeBreakdownContainer.innerHTML = '<h3>Time Breakdown</h3><div>Awaiting model...</div>';
+
+        const modelURL = URL + "model.json";
+        const metadataURL = URL + "metadata.json";
+
+        model = await tmPose.load(modelURL, metadataURL);
+        maxPredictions = model.getTotalClasses();
+
+        // NEW: Initialize the cumulative time object with all class labels from the model
+        const classLabels = model.getClassLabels();
+        for (const label of classLabels) {
+            cumulativePoseTime[label] = 0;
+        }
+
+        const targetWidth = 540;
+        const targetHeight = 360;
+        const flip = true;
+
+        webcam = new tmPose.Webcam(targetWidth, targetHeight, flip);
+        await webcam.setup();
+        await webcam.play();
+        
+        monitoringActive = true;
+        window.requestAnimationFrame(loop);
+
+        const canvas = document.getElementById("canvas");
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        ctx = canvas.getContext("2d");
+
+        document.getElementById("webcam-container").innerHTML = '';
+        document.getElementById("webcam-container").appendChild(webcam.canvas);
+
+        labelContainer = document.getElementById("label-container");
+        labelContainer.innerHTML = ''; // Clear previous labels
+        for (let i = 0; i < maxPredictions; i++) {
+            labelContainer.appendChild(document.createElement("div"));
+        }
+
+        timerInterval = setInterval(updateTimerAndBreakdown, 1000);
+    }
+
+    async function loop(timestamp) {
+        if (!monitoringActive) return;
+        webcam.update();
+        await predict();
+        window.requestAnimationFrame(loop);
+    }
+
+    async function predict() {
+        const { pose, posenetOutput } = await model.estimatePose(webcam.canvas);
+        const prediction = await model.predict(posenetOutput);
+
+        let dominantPrediction = null;
+        for (let i = 0; i < maxPredictions; i++) {
+            // Find the prediction with the highest probability
+            if (!dominantPrediction || prediction[i].probability > dominantPrediction.probability) {
+                dominantPrediction = prediction[i];
+            }
+            // Display all predictions
+            const classPrediction =
+                prediction[i].className + ": " + prediction[i].probability.toFixed(2);
+            labelContainer.childNodes[i].innerHTML = classPrediction;
+        }
+
+        // NEW: Update the globally tracked dominant pose for the current frame
+        if (dominantPrediction) {
+            lastDominantPose = dominantPrediction.className;
+        }
+
+        drawPose(pose);
+    }
+
+    function drawPose(pose) {
+        if (webcam.canvas) {
+            ctx.drawImage(webcam.canvas, 0, 0, canvas.width, canvas.height);
+            if (pose) {
+                const minPartConfidence = 0.5;
+                tmPose.drawKeypoints(pose.keypoints, minPartConfidence, ctx);
+                tmPose.drawSkeleton(pose.keypoints, minPartConfidence, ctx);
+            }
+        }
+    }
+
+    // MODIFIED: This function now updates the timer AND the time breakdown display
+    function updateTimerAndBreakdown() {
+        secondsElapsed++;
+        
+        // Update the main timer display
+        const minutes = Math.floor(secondsElapsed / 60);
+        const seconds = secondsElapsed % 60;
+        timerDisplay.textContent = `Timer: ${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
+        // NEW: Add 1 second to the cumulative time for the last detected dominant pose
+        if (lastDominantPose && cumulativePoseTime.hasOwnProperty(lastDominantPose)) {
+            cumulativePoseTime[lastDominantPose]++;
+        }
+
+        // NEW: Update the breakdown display on the screen
+        updateBreakdownDisplay();
+    }
+    
+    // NEW: Function to render the time breakdown in the HTML
+    function updateBreakdownDisplay() {
+        let breakdownHTML = '<h3>Time Breakdown</h3>';
+        
+        // Sort poses alphabetically for consistent order
+        const sortedPoseNames = Object.keys(cumulativePoseTime).sort();
+
+        for (const poseName of sortedPoseNames) {
+            const time = cumulativePoseTime[poseName];
+            const percentage = (secondsElapsed > 0) ? ((time / secondsElapsed) * 100).toFixed(1) : "0.0";
+            const timeFormatted = `${String(Math.floor(time / 60)).padStart(2, '0')}:${String(time % 60).padStart(2, '0')}`;
+
+            breakdownHTML += `
+                <div class="time-entry">
+                    <span class="pose-name">${poseName}</span>
+                    <span class="pose-stats">
+                        <span class="pose-time">${timeFormatted}</span>
+                        <span class="pose-percent">(${percentage}%)</span>
+                    </span>
+                </div>
+            `;
+        }
+        timeBreakdownContainer.innerHTML = breakdownHTML;
+    }
+
+    async function stopMonitoring() {
+        if (!monitoringActive) return;
+
+        monitoringActive = false;
+        clearInterval(timerInterval);
+        timerInterval = null;
+
+        if (webcam) {
+            webcam.stop();
+            document.getElementById("webcam-container").innerHTML = '';
+            if (ctx) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = 'black';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = 'white';
+                ctx.font = '20px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('Monitoring Stopped', canvas.width / 2, canvas.height / 2);
+            }
+        }
+
+        startButton.disabled = false;
+        stopButton.disabled = true;
+        
+        // Update final timer and breakdown title
+        const finalMinutes = Math.floor(secondsElapsed / 60);
+        const finalSeconds = secondsElapsed % 60;
+        timerDisplay.textContent = `Timer: ${String(finalMinutes).padStart(2, '0')}:${String(finalSeconds).padStart(2, '0')} (Stopped)`;
+        
+        if (timeBreakdownContainer.firstChild) {
+            timeBreakdownContainer.firstChild.textContent = 'Final Session Summary';
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        startButton.disabled = false;
+        stopButton.disabled = true;
+        timerDisplay.textContent = "Timer: 00:00";
+        // NEW: Initialize the breakdown container on page load
+        document.getElementById("time-breakdown-container").innerHTML = '<h3>Time Breakdown</h3><div>Ready to start.</div>';
+    });
+
+</script>
+</body>
+</html>
+```
